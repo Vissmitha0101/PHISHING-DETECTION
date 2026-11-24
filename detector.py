@@ -1,22 +1,35 @@
 import re
 from urllib.parse import urlparse
 
-# ---------- Link Analysis ----------
-SUSPICIOUS_TLDS = {'.xyz', '.top', '.tk', '.buzz', '.click', '.link', '.work', '.gq', '.ml'}
-SHORTENERS = {'bit.ly', 'tinyurl.com', 't.co', 'goo.gl', 'ow.ly', 'is.gd', 'buff.ly'}
-BRAND_KEYWORDS = {'paypal', 'apple', 'microsoft', 'google', 'amazon', 'netflix', 'facebook', 'bank'}
+SUSPICIOUS_TLDS = {
+    '.xyz', '.top', '.tk', '.buzz', '.click',
+    '.link', '.work', '.gq', '.ml'
+}
+
+SHORTENERS = {
+    'bit.ly', 'tinyurl.com', 't.co',
+    'goo.gl', 'ow.ly', 'is.gd', 'buff.ly'
+}
+
+BRAND_KEYWORDS = {
+    'paypal', 'apple', 'microsoft', 'google',
+    'amazon', 'netflix', 'facebook', 'bank'
+}
+
 
 def analyze_url(url: str) -> dict:
-    """Returns {'risk': 'Low/Medium/High', 'reasons': [...], 'indicators': [...]}"""
     reasons = []
-    score = 0  # 0-100 internal score
+    score = 0
 
-    # Basic format check
     if not url or len(url.strip()) < 4:
-        return {'risk': 'High', 'reasons': ['The link is too short or malformed'], 'indicators': ['invalid_url']}
+        return {
+            'risk': 'High',
+            'reasons': ['The link is too short or malformed'],
+            'indicators': ['invalid_url']
+        }
 
     raw = url.strip()
-    # Auto-add scheme for parsing
+
     if not re.match(r'^https?://', raw, re.I):
         parse_target = 'http://' + raw
     else:
@@ -24,150 +37,199 @@ def analyze_url(url: str) -> dict:
 
     try:
         p = urlparse(parse_target)
+        host = (p.hostname or '').lower()
+        path = (p.path or '').lower()
     except Exception:
-        return {'risk': 'High', 'reasons': ['Unable to parse this link'], 'indicators': ['parse_error']}
+        return {
+            'risk': 'High',
+            'reasons': ['Unable to parse this link'],
+            'indicators': ['parse_error']
+        }
 
-    host = (p.hostname or '').lower()
-    path = (p.path or '').lower()
-    full = (host + path).lower()
+    if not host:
+        return {
+            'risk': 'High',
+            'reasons': ['The link does not contain a valid hostname'],
+            'indicators': ['invalid_host']
+        }
 
-    # 1. IP address as domain — high risk
-    if re.match(r'^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$', host):
+    full = host + path
+
+    # IP address in URL
+    if re.match(r'^\d{1,3}(\.\d{1,3}){3}$', host):
         score = max(score, 85)
-        reasons.append('The link uses an IP address instead of a domain name, which is typical phishing behavior')
-        # indicators
+        reasons.append("The link uses an IP address instead of a normal domain")
 
-    # 2. @ symbol in URL — high risk (everything before @ is decorative, real destination is after)
-    if '@' in raw.split('://')[-1].split('/')[0]:
+    # @ symbol in URL
+    if '@' in p.netloc:
         score = max(score, 90)
-        reasons.append('The link contains an "@" symbol, which can be used to hide the real destination')
+        reasons.append("The link contains an unusual @ symbol")
 
-    # 3. URL shortener — at least Medium
+    # URL shorteners
     if host in SHORTENERS:
         score = max(score, 55)
-        reasons.append('The link uses a URL shortening service, hiding the real destination address')
+        reasons.append("The link uses a URL shortening service")
 
-    # 4. Suspicious TLD — at least Medium
-    tld = '.' + host.split('.')[-1] if '.' in host else ''
-    if tld in SUSPICIOUS_TLDS:
+    # Suspicious domain extension
+    if any(host.endswith(tld) for tld in SUSPICIOUS_TLDS):
         score = max(score, 60)
-        reasons.append(f'The domain uses a suspicious top-level domain ({tld}), commonly used for low-cost phishing sites')
+        reasons.append("The domain uses a commonly abused extension")
 
-    # 5. Brand impersonation + suspicious subdomain
-    # Example: paypal.evil.com — paypal appears but is not the real domain
-    parts = host.split('.')
-    if len(parts) >= 3:
-        for brand in BRAND_KEYWORDS:
-            if brand in host and not host.endswith(brand + '.com') and not host.endswith(brand + '.cn'):
+    # Possible brand impersonation
+    for brand in BRAND_KEYWORDS:
+        if brand in host:
+            trusted_domains = (
+                brand + '.com',
+                brand + '.in',
+                brand + '.org',
+                brand + '.net'
+            )
+
+            if not any(host == domain or host.endswith('.' + domain)
+                       for domain in trusted_domains):
                 score = max(score, 75)
-                reasons.append(f'The link contains "{brand}" but the actual domain is not the official {brand} domain')
+                reasons.append(
+                    "The domain may be impersonating a trusted brand"
+                )
                 break
 
-    # 6. Excessive hyphens / digits in domain
-    if host.count('-') >= 3:
+    # Too many hyphens or numbers
+    if host.count('-') >= 3 or len(re.findall(r'\d', host)) >= 5:
         score = max(score, 50)
-        reasons.append('The domain contains excessive hyphens, which may be auto-generated by phishing')
-    if sum(c.isdigit() for c in host) >= 5:
-        score = max(score, 50)
-        reasons.append('The domain contains excessive digits')
+        reasons.append("The domain contains an unusual number of hyphens or digits")
 
-    # 7. Suspicious keywords in path but unfamiliar domain
-    suspicious_words = ['login', 'verify', 'secure', 'account', 'update', 'confirm', 'banking']
-    if any(w in path for w in suspicious_words) and not any(
-        host.endswith(b + '.com') for b in BRAND_KEYWORDS
-    ):
-        score = max(score, 45)  # Medium
-        reasons.append('The link path contains sensitive words such as login/verify, but the domain is not an official domain')
+    # Suspicious words in URL path
+    suspicious_words = [
+        'login', 'verify', 'update', 'secure',
+        'account', 'password', 'banking'
+    ]
 
-    # 8. Very long URL
+    if any(word in full for word in suspicious_words):
+        if not reasons:
+            score = max(score, 35)
+            reasons.append("The URL contains words commonly used in phishing links")
+
+    # Very long URL
     if len(raw) > 150:
         score = max(score, 40)
-        reasons.append('The link is unusually long, which may be used to hide the real destination')
+        reasons.append("The URL is unusually long")
 
-    # If no reasons found, still don't claim safe
+    # Risk calculation
     if not reasons:
-        return {
-            'risk': 'Low',
-            'reasons': ['No obvious suspicious features were found, but this is not a guarantee of safety. Please stay cautious.'],
-            'indicators': []
-        }
-
-    # Risk mapping
-    if score >= 70:
+        risk = 'Low'
+        reasons.append(
+            "No obvious suspicious features were found. "
+            "This does not guarantee the link is safe."
+        )
+    elif score >= 70:
         risk = 'High'
-    elif score >= 35:
-        risk = 'Medium'
     else:
-        risk = 'Medium'  # Any suspicious signal means at least Medium, never Low
+        risk = 'Medium'
 
-    return {'risk': risk, 'reasons': reasons, 'indicators': reasons[:]}
+    return {
+        'risk': risk,
+        'reasons': reasons,
+        'indicators': reasons[:]
+    }
 
 
-# ---------- Email Analysis ----------
-def analyze_email(text: str) -> dict:
+def analyze_email(email: str) -> dict:
     reasons = []
     score = 0
-    lower = text.lower()
 
-    # 1. Urgency / threatening language
-    urgency_patterns = [
-        r'within \d+ hours?', r'immediately', r'urgent', r'suspend(ed)?',
-        r'verify (your )?account', r'click (here|below) to (verify|confirm|unlock)',
-        r'failure to (comply|respond)', r'final (warning|notice)',
-        r'your account (will be|has been) (locked|suspended|closed)'
-    ]
-    urgency_hits = [p for p in urgency_patterns if re.search(p, lower)]
-    if urgency_hits:
-        score += 30
-        reasons.append('The content uses urgent or threatening language to pressure you into action')
-
-    # 2. Generic greeting
-    if re.search(r'dear (customer|user|client|member|sir/madam)', lower):
-        score += 15
-        reasons.append('Uses a generic greeting instead of your name, which is a common bulk phishing characteristic')
-
-    # 3. Request for sensitive information
-    sensitive_req = ['password', 'otp', 'one-time', 'card number', 'cvv', 'pin', 'social security']
-    hits = [w for w in sensitive_req if w in lower]
-    if hits:
-        score += 35
-        reasons.append('Requests sensitive information (such as password/OTP/bank card details), legitimate organizations typically do not do this via email')
-
-    # 4. Sender / reply-to mismatch (if raw headers present)
-    if 'reply-to:' in lower and 'from:' in lower:
-        from_match = re.search(r'from:.*?[\w\.-]+@([\w\.-]+)', lower)
-        reply_match = re.search(r'reply-to:.*?[\w\.-]+@([\w\.-]+)', lower)
-        if from_match and reply_match and from_match.group(1) != reply_match.group(1):
-            score += 40
-            reasons.append('The sender address and Reply-To address domains do not match, replies may go to a different party')
-
-    # 5. SPF/DKIM failure flags (in raw headers)
-    if 'spf=fail' in lower or 'dkim=fail' in lower or 'dmarc=fail' in lower:
-        score += 50
-        reasons.append('The email headers show SPF/DKIM/DMARC authentication failure, the sender identity is questionable')
-
-    # 6. Extract links and analyze
-    urls = re.findall(r'https?://[^\s<>"\']+', text)
-    link_results = []
-    for u in urls[:5]:
-        r = analyze_url(u)
-        link_results.append({'url': u, **r})
-        if r['risk'] == 'High':
-            score += 25
-            reasons.append(f'The email contains a high-risk link: {u[:60]}...')
-
-    if not reasons:
+    if not email or not email.strip():
         return {
-            'risk': 'Low',
-            'reasons': ['No obvious suspicious features were found, but this is not a guarantee of safety.'],
-            'links': link_results
+            'risk': 'High',
+            'reasons': ['Email content is empty'],
+            'indicators': ['empty_email'],
+            'links': []
         }
 
-    if score >= 60:
-        risk = 'High'
-    elif score >= 30:
-        risk = 'Medium'
-    else:
-        risk = 'Medium'  # Same principle: suspicious signals mean at least Medium
+    email_lower = email.lower()
 
-    return {'risk': risk, 'reasons': reasons, 'links': link_results}
+    # Urgent language
+    urgency_patterns = [
+        r'urgent',
+        r'immediately',
+        r'account.*suspend',
+        r'act now',
+        r'within 24 hours',
+        r'limited time'
+    ]
+
+    if any(re.search(pattern, email_lower) for pattern in urgency_patterns):
+        score += 30
+        reasons.append("The email uses urgent or threatening language")
+
+    # Generic greeting
+    if re.search(r'hello user|dear customer|dear user|dear valued', email_lower):
+        score += 15
+        reasons.append("The email uses a generic greeting")
+
+    # Sensitive information requests
+    sensitive_patterns = [
+        'password', 'otp', 'bank details',
+        'credit card', 'social security',
+        'verify your account', 'personal information'
+    ]
+
+    if any(word in email_lower for word in sensitive_patterns):
+        score += 35
+        reasons.append("The email mentions sensitive information or account verification")
+
+    # Sender and reply-to mismatch
+    from_match = re.search(r'from:\s*.*?<([^>]+)>', email_lower)
+    reply_match = re.search(r'reply-to:\s*.*?<([^>]+)>', email_lower)
+
+    if from_match and reply_match:
+        if from_match.group(1) != reply_match.group(1):
+            score += 40
+            reasons.append("The sender and reply-to addresses do not match")
+
+    # Email authentication failures
+    auth_failures = [
+        'spf=fail', 'dkim=fail', 'dmarc=fail'
+    ]
+
+    if any(item in email_lower for item in auth_failures):
+        score += 50
+        reasons.append("Email authentication checks show a failure")
+
+    # Extract links
+    urls = re.findall(r'https?://[^\s<>"]+', email, re.I)
+    links = []
+
+    for url in urls[:5]:
+        url = url.rstrip('.,);]')
+        result = analyze_url(url)
+
+        links.append({
+            'url': url,
+            'risk': result['risk']
+        })
+
+        if result['risk'] == 'High':
+            score += 25
+            reasons.append("The email contains a high-risk link")
+        elif result['risk'] == 'Medium':
+            score += 15
+            reasons.append("The email contains a suspicious link")
+
+    # Final risk calculation
+    if not reasons:
+        risk = 'Low'
+        reasons.append(
+            "No obvious phishing indicators were found. "
+            "This does not guarantee the email is safe."
+        )
+    elif score >= 60:
+        risk = 'High'
+    else:
+        risk = 'Medium'
+
+    return {
+        'risk': risk,
+        'reasons': reasons,
+        'indicators': reasons[:],
+        'links': links
+    }
