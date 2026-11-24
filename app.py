@@ -2,13 +2,13 @@ import streamlit as st
 from detector import analyze_email, analyze_url
 from advice import ADVICE, get_advice
 
-st.set_page_config(page_title="PhishGuard", page_icon="🛡️", layout="centered")
+st.set_page_config(page_title="PhishGuard", layout="centered")
 
-st.title("🛡️ PhishGuard")
+st.title("PhishGuard")
 st.caption("Phishing detection and user protection tool | Results are assessments only, not security guarantees")
 
 # Privacy note
-st.info("🔒 **Privacy**: The content you enter is processed only in the current session and is not stored, logged, or shared with any third party.")
+st.info(" **Privacy**: The content you enter is processed only in the current session and is not stored, logged, or shared with any third party.")
 
 mode = st.radio("What would you like to check?", ["Suspicious Link", "Email Content"], horizontal=True)
 
