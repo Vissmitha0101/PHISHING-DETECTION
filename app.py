@@ -1,6 +1,6 @@
 import streamlit as st
 from detector import analyze_email, analyze_url
-from advice import get_advice
+from advice import ADVICE, get_advice
 
 st.set_page_config(page_title="PhishGuard", page_icon="🛡️", layout="centered")
 
