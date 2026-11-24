@@ -1,6 +1,7 @@
 import re
 import requests
 import socket
+from advice import ADVICE, get_advice
 ADVICE = {
     "only_clicked": {
         "title": "You only opened the link but did not enter anything",
