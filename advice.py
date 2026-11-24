@@ -1,3 +1,6 @@
+import re
+import requests
+import socket
 ADVICE = {
     "only_clicked": {
         "title": "You only opened the link but did not enter anything",
