@@ -5,7 +5,7 @@ from advice import ADVICE, get_advice
 st.set_page_config(page_title="PhishGuard", layout="centered")
 
 st.title(" PhishGuard")
-st.caption("Phishing detection and user protection tool | Results are assessments only, not security guarantees")
+st.caption("Phishing detection and user protection tool. Detects suspicious links, Identifies Phishing emails. Make safer digital decisions!! Results are assessments only, not security guarantees")
 
 # Privacy note
 st.info(
