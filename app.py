@@ -2,14 +2,14 @@ import streamlit as st
 from detector import analyze_email, analyze_url
 from advice import ADVICE, get_advice
 
-st.set_page_config(page_title="PhishGuard", page_icon="🛡️", layout="centered")
+st.set_page_config(page_title="PhishGuard", layout="centered")
 
-st.title("🛡️ PhishGuard")
+st.title(" PhishGuard")
 st.caption("Phishing detection and user protection tool | Results are assessments only, not security guarantees")
 
 # Privacy note
 st.info(
-    "🔒 **Privacy**: Avoid entering real passwords, OTPs, "
+    " **Privacy**: Avoid entering real passwords, OTPs, "
     "bank details, or other sensitive personal information. "
     "Submitted content is processed for analysis by this application."
 )
